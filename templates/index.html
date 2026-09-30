@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stock Market Analysis | Python & ML</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f7fb;
+      color: #182230;
+    }
+    header {
+      background: #111827;
+      color: white;
+      padding: 28px 20px;
+      text-align: center;
+    }
+    header h1 { margin: 0 0 8px; }
+    header p { margin: 0; opacity: .8; }
+    main { max-width: 1100px; margin: 28px auto; padding: 0 16px; }
+    .panel, .card {
+      background: white;
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 5px 20px rgba(0,0,0,.06);
+      margin-bottom: 18px;
+    }
+    form {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      align-items: end;
+    }
+    label { font-size: 13px; font-weight: 700; display: block; margin-bottom: 6px; }
+    input, button {
+      width: 100%;
+      padding: 11px 12px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      font-size: 14px;
+    }
+    button {
+      border: 0;
+      background: #2563eb;
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:hover { opacity: .9; }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+    .metric {
+      background: #f8fafc;
+      padding: 16px;
+      border-radius: 10px;
+    }
+    .metric small { color: #64748b; }
+    .metric strong { display: block; font-size: 22px; margin-top: 6px; }
+    .tables {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+    th { background: #f8fafc; }
+    .loading { display: none; margin-top: 12px; }
+    .error { color: #b91c1c; margin-top: 12px; }
+    .signal { font-weight: 800; }
+    @media (max-width: 800px) {
+      form, .summary, .tables { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Stock Market Analysis</h1>
+  <p>Supervised Machine Learning using Python</p>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Analyze a Stock</h2>
+    <form id="form">
+      <div>
+        <label for="ticker">Ticker</label>
+        <input id="ticker" value="AAPL" required>
+      </div>
+      <div>
+        <label for="start">Start date</label>
+        <input id="start" type="date" value="2015-01-01">
+      </div>
+      <div>
+        <label for="end">End date (optional)</label>
+        <input id="end" type="date">
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button type="submit">Run ML Analysis</button>
+      </div>
+    </form>
+    <div class="loading" id="loading">Loading market data and training models...</div>
+    <div class="error" id="error"></div>
+  </section>
+
+  <section id="results" style="display:none">
+    <div class="card">
+      <h2 id="title"></h2>
+      <div class="summary">
+        <div class="metric"><small>Last test date</small><strong id="date"></strong></div>
+        <div class="metric"><small>Last close</small><strong id="close"></strong></div>
+        <div class="metric"><small>ML signal</small><strong class="signal" id="signal"></strong></div>
+        <div class="metric"><small>Train / Test rows</small><strong id="rows"></strong></div>
+      </div>
+    </div>
+
+    <div class="tables">
+      <div class="card">
+        <h2>Model Results</h2>
+        <table>
+          <thead>
+            <tr><th>Metric</th><th>Logistic</th><th>Gradient Boosting</th></tr>
+          </thead>
+          <tbody id="modelTable"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Gradient Boosting Features</h2>
+        <table>
+          <thead><tr><th>Feature</th><th>Importance</th></tr></thead>
+          <tbody id="featureTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const form = document.getElementById("form");
+const loading = document.getElementById("loading");
+const error = document.getElementById("error");
+const results = document.getElementById("results");
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  loading.style.display = "block";
+  error.textContent = "";
+  results.style.display = "none";
+
+  const params = new URLSearchParams({
+    ticker: document.getElementById("ticker").value,
+    start: document.getElementById("start").value
+  });
+
+  const end = document.getElementById("end").value;
+  if (end) params.set("end", end);
+
+  try {
+    const response = await fetch("/api/analyze?" + params.toString());
+    const payload = await response.json();
+
+    if (!payload.success) throw new Error(payload.error || "Analysis failed.");
+
+    const d = payload.data;
+    document.getElementById("title").textContent =
+      `${d.ticker} — Machine Learning Analysis`;
+    document.getElementById("date").textContent = d.last_date;
+    document.getElementById("close").textContent = d.last_close.toFixed(2);
+    document.getElementById("signal").textContent = d.latest_signal;
+    document.getElementById("rows").textContent =
+      `${d.train_rows} / ${d.test_rows}`;
+
+    const metrics = [
+      ["Accuracy", "accuracy"],
+      ["Precision", "precision"],
+      ["Recall", "recall"],
+      ["Strategy Return", "strategy_return"],
+      ["Buy & Hold Return", "buy_hold_return"],
+      ["Sharpe", "sharpe"]
+    ];
+
+    const format = (key, value) => {
+      if (key.includes("return")) return (value * 100).toFixed(2) + "%";
+      return Number(value).toFixed(3);
+    };
+
+    document.getElementById("modelTable").innerHTML = metrics.map(([label, key]) =>
+      `<tr><td>${label}</td><td>${format(key, d.logistic[key])}</td><td>${format(key, d.gradient_boosting[key])}</td></tr>`
+    ).join("");
+
+    document.getElementById("featureTable").innerHTML =
+      d.feature_importance.map(x =>
+        `<tr><td>${x.feature}</td><td>${x.importance.toFixed(4)}</td></tr>`
+      ).join("");
+
+    results.style.display = "block";
+  } catch (err) {
+    error.textContent = err.message;
+  } finally {
+    loading.style.display = "none";
+  }
+});
+</script>
+</body>
+</html>
